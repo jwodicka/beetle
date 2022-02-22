@@ -1,0 +1,49 @@
+node[name] {
+    width: 120;
+    height: 120;
+    label: data(name);
+}
+node[name]:childless {
+    text-valign: center;
+    text-wrap: wrap;
+    text-max-width: 115;
+}
+node {
+    background-opacity: 0.5;
+    border-color: black;
+    border-style: solid;
+    border-width: 1;
+    border-opacity: 0.75;
+}
+
+[type^="Abstract"] {
+    background-opacity: 0.25;
+}
+[type="Alias"] {
+    background-opacity: 0.25;
+    shape: triangle;
+    background-color: goldenrod; 
+}
+[type$="Model"] {
+    shape: round-rectangle;
+    background-color: lightseagreen;
+}
+[type$="Class"] {
+    shape: rectangle;
+    background-color: brown;
+}
+[type$="Module"] {
+    shape: bottom-round-rectangle;
+    background-color: green;
+}
+
+edge{
+    width: 5;
+}
+edge[originTools.0="rubrowser"] {
+    width: 1;
+    line-opacity: 0.5;
+}
+edge[siblingBond] {
+    display: none;
+}
