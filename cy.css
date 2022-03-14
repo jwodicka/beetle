@@ -41,10 +41,18 @@ edge{
     width: 5;
 }
 edge[originTools.0="rubrowser"] {
+    line-fill: linear-gradient;
+    line-gradient-stop-colors: cyan black;
     width: 1;
     line-opacity: 0.5;
+    
     target-arrow-color: black;
     target-arrow-shape: triangle;
+    target-arrow-fill: filled;
+    arrow-scale: 5;
+}
+edge[?circular] {
+    line-gradient-stop-colors: red red;
 }
 edge[siblingBond] {
     display: none;
