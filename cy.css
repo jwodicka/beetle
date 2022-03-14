@@ -43,6 +43,8 @@ edge{
 edge[originTools.0="rubrowser"] {
     width: 1;
     line-opacity: 0.5;
+    target-arrow-color: black;
+    target-arrow-shape: triangle;
 }
 edge[siblingBond] {
     display: none;
