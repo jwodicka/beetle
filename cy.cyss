@@ -9,11 +9,20 @@ node[name]:childless {
     text-max-width: 115;
 }
 node {
-    background-opacity: 0.5;
+    background-opacity: 1;
     border-color: black;
     border-style: solid;
     border-width: 1;
     border-opacity: 0.75;
+}
+node:locked {
+    border-color: red;
+    border-width: 2;
+}
+:selected {
+    underlay-color: lime;
+    underlay-padding: 10px;
+    underlay-opacity: 0.75;
 }
 
 [type^="Abstract"] {
@@ -36,9 +45,13 @@ node {
     shape: bottom-round-rectangle;
     background-color: green;
 }
+node[name$="Controller"] {
+    background-color: orange;
+}
 
 edge{
     width: 5;
+    curve-style: bezier;
 }
 edge[originTools.0="rubrowser"] {
     line-fill: linear-gradient;
@@ -49,7 +62,6 @@ edge[originTools.0="rubrowser"] {
     target-arrow-color: black;
     target-arrow-shape: triangle;
     target-arrow-fill: filled;
-    arrow-scale: 5;
 }
 edge[?circular] {
     line-gradient-stop-colors: red red;

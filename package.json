@@ -11,7 +11,11 @@
   "license": "UNLICENSED",
   "dependencies": {
     "cytoscape": "^3.21.0",
+    "cytoscape-bubblesets": "^3.1.0",
     "cytoscape-cola": "^2.5.0",
+    "cytoscape-context-menus": "^4.1.0",
+    "cytoscape-dagre": "^2.4.0",
+    "cytoscape-layers": "^2.2.0",
     "http-server": "^14.1.0",
     "webcola": "^3.4.0",
     "webpack": "^5.70.0",

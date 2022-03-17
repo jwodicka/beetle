@@ -14,6 +14,11 @@ module.exports = {
         test: /\.css$/i,
         use: ['style-loader', 'css-loader'],
       },
+      {
+        // Cytoscape style files can be inlined.
+        test: /\.cyss$/i,
+        type: 'asset/source',
+      }
     ],
   },
   plugins: [

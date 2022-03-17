@@ -1,8 +1,8 @@
 const graphTasks = (cy) => ({
-  // TODO: Take the heart of the subset as an argument.
-  workWithSubset: () => {
+  workWithSubset: (selector) => () => {
+    console.log(`Working with subset from ${selector}`)
     let local = cy.collection();
-    local = local.union(cy.nodes('[id="423"]')); // FutureHubrisVehicle
+    local = local.union(cy.nodes(selector));
     local = local.union(local.children());
     local = local.union(local.connectedEdges().connectedNodes());
     local = local.union(local.nonorphans().parents());
