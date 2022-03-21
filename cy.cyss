@@ -1,6 +1,6 @@
 node[name] {
-    width: 120;
-    height: 120;
+    width: 150;
+    height: 150;
     label: data(name);
 }
 node[name]:childless {
@@ -13,7 +13,7 @@ node {
     border-color: black;
     border-style: solid;
     border-width: 1;
-    border-opacity: 0.75;
+    border-opacity: 1;
 }
 node:locked {
     border-color: red;
@@ -26,15 +26,15 @@ node:locked {
 }
 
 [type^="Abstract"] {
-    background-opacity: 0.25;
+    background-blacken: -0.5;
 }
 [type="Alias"] {
-    background-opacity: 0.25;
-    shape: triangle;
+    background-blacken: -0.5;
+    shape: round-diamond;
     background-color: goldenrod; 
 }
 [type$="Model"] {
-    shape: round-rectangle;
+    shape: ellipse;
     background-color: lightseagreen;
 }
 [type$="Class"] {
@@ -42,7 +42,7 @@ node:locked {
     background-color: brown;
 }
 [type$="Module"] {
-    shape: bottom-round-rectangle;
+    shape: rectangle;
     background-color: green;
 }
 node[name$="Controller"] {
@@ -68,4 +68,51 @@ edge[?circular] {
 }
 edge[siblingBond] {
     display: none;
+}
+node.collapse {
+    label: ;
+    height: 10;
+    width: 10;
+}
+.hidden {
+    visibility: hidden;
+}
+.constraint {
+    width: 2;
+}
+[rrType] {
+    line-color: blue;
+    line-opacity: 1;
+}
+[rrType="many:many"] {
+    width: 2;
+    line-color: orange;
+    line-opacity: 1;
+}
+[rrType="is-a"] {
+    target-label: is a;
+    target-text-offset: 20;
+    target-text-rotation: autorotate;
+    source-arrow-color: black;
+    source-arrow-shape: triangle;
+    line-color: black;
+    line-style: dashed;
+    line-opacity: 1;
+}
+[sourceCardinality="many"] {
+    source-arrow-shape: tee;
+}
+[targetCardinality="many"] {
+    target-arrow-shape: tee;
+}
+[sourceCardinality="one"] {
+    source-arrow-shape: circle;
+}
+[targetCardinality="one"] {
+    target-arrow-shape: circle;
+}
+[?indirect] {
+    line-style: dotted;
+    width: 1;
+    line-color: black;
 }

@@ -1,6 +1,8 @@
 import cytoscape from "cytoscape";
 import cola from "cytoscape-cola";
 import dagre from "cytoscape-dagre";
+import cise from "cytoscape-cise";
+import layoutUtilities from 'cytoscape-layout-utilities';
 
 import BubbleSets from "cytoscape-bubblesets";
 import contextMenus from 'cytoscape-context-menus';
@@ -10,12 +12,15 @@ import graphTasks from './graphtasks';
 
 import './style.css';
 import cystyle from './cy.cyss';
+import { Solver } from "webcola";
 
 // Register extensions
+cytoscape.use( layoutUtilities );
 cytoscape.use(cola);
 cytoscape.use(dagre);
 cytoscape.use(BubbleSets);
 cytoscape.use(contextMenus);
+cytoscape.use(cise);
 
 // Create the Cytoscape-managed div.
 const container = document.createElement('div');
@@ -34,40 +39,33 @@ const bb = cy.bubbleSets();
 
 let colaLayout;
 
+let groups = [];
+
 // Set up context menus
 const menus = cy.contextMenus({menuItems: [
   {
     id: 'lock',
     content: 'Lock node',
     selector: 'node:unlocked',
-    onClickFunction: (e) => {
-      e.target.lock();
-    }
+    onClickFunction: (e) => {e.target.lock();}
   },
   {
     id: 'unlock',
     content: 'Unlock node',
     selector: 'node:locked',
-    onClickFunction: (e) => {
-      e.target.unlock();
-    }
+    onClickFunction: (e) => {e.target.unlock();}
   },
   {
     id: 'remove',
     content: 'Remove node',
     selector: 'node',
-    onClickFunction: (e) => {
-      e.target.remove();
-    }
+    onClickFunction: (e) => {e.target.remove();}
   },
   {
     id: 'fit',
-    content: 'Fit',
-    selector: 'node, edge',
+    content: 'Fit to all nodes',
     coreAsWell: true,
-    onClickFunction: () => {
-      cy.fit();
-    }
+    onClickFunction: () => {cy.fit();}
   },
   {
     id: 'info',
@@ -106,6 +104,15 @@ const menus = cy.contextMenus({menuItems: [
         selector: 'node, edge',
         onClickFunction: () => {
           cy.elements().select();
+        }
+      },
+      {
+        id: 'selectGroup',
+        content: 'Select group',
+        onClickFunction: (e) => {
+          const group = e.target.data('group');
+          console.log(group);
+          cy.nodes(`[group="${group}"]`).select();
         }
       },
       {
@@ -155,6 +162,20 @@ const menus = cy.contextMenus({menuItems: [
     selector: 'node:selected, edge:selected',
     submenu: [
       {
+        id: 'hideRest',
+        content: 'Hide unselected entities',
+        onClickFunction: () => {
+          cy.elements(':selected').absoluteComplement().toggleClass('hidden', true);
+        }
+      },
+      {
+        id: 'removeRest',
+        content: 'Remove unselected entities',
+        onClickFunction: () => {
+          cy.elements(':selected').absoluteComplement().remove();
+        }
+      },
+      {
         id: 'lockSelected',
         content: 'Lock all nodes',
         onClickFunction: () => {
@@ -200,14 +221,31 @@ const menus = cy.contextMenus({menuItems: [
               }
               return min;
             });
+            let smallestRoots = smallestComponent.roots();
+            if (smallestRoots.length < 1) {
+              smallestRoots = smallestComponent;
+            }
             const rest = selectedElements.subtract(smallestComponent);
-            selection = selection.union(rest.edgesTo(smallestComponent).edges('[originTools.0="rubrowser"]'));
+            selection = selection.union(rest.edgesTo(smallestRoots).edges('[originTools.0="rubrowser"]'));
             components = selection.components();
           }
 
           selection.layout({
             name: 'dagre',
             rankDir: 'TB',
+            acyclicer: 'greedy',
+          }).start();
+        }
+      },
+      {
+        id: 'dagreAcyclicer',
+        content: 'Dagre layout using Dagre acyclicer',
+        onClickFunction: (e) => {
+          cy.elements(':selected').layout({
+            name: 'dagre',
+            rankDir: 'TB',
+            ranker: 'longest-path',
+            acyclicer: 'greedy'
           }).start();
         }
       },
@@ -223,31 +261,91 @@ const menus = cy.contextMenus({menuItems: [
     ]
   },
   {
+    id: 'markConstraints',
+    content: 'Mark COLA constraints',
+    coreAsWell: true,
+    onClickFunction: () => {
+      // All non-circular edges generate inequalities
+      const nonCircularEdges = cy.edges('[!circular]');
+      // Some edges that are not tagged as circular are still directly circular.
+      // Remove those from the set.
+      const reallyNonCircularEdges = nonCircularEdges.filter((edge) => 
+        edge.parallelEdges().subtract(
+          edge.codirectedEdges()
+        ).length === 0
+      );
+
+      // All leaf nodes are safe to put below their parents
+      const leafEdges = cy.nodes().leaves().incomers('edge');
+      // console.log(leafEdges.map(e => `${e.source().id()} -> ${e.target().id()}`));
+      
+      const inequalityEdges = reallyNonCircularEdges.union(leafEdges);
+      inequalityEdges.addClass('constraint');
+      inequalityEdges.data('constraint', true);
+    }
+  },
+  {
+    id: 'makeConstraint',
+    content: 'Make this edge a constraint',
+    selector: 'edge[^constraint]',
+    onClickFunction: (e) => {
+      e.target.addClass('constraint');
+      e.target.data('constraint', true);
+    }
+  },
+  {
+    id: 'clearConstraint',
+    content: 'Remove this edge as a constraint',
+    selector: 'edge[constraint]',
+    onClickFunction: (e) => {
+      e.target.removeClass('constraint');
+      e.target.data('constraint', undefined);
+    }
+  },
+  {
     id: 'startCola',
     content: 'Start COLA layout',
     coreAsWell: true,
     onClickFunction: () => {
       console.log("starting interactive COLA");
-      colaLayout = cy.layout({
+      const visibleGraph = cy.elements(':visible');
+
+      const gapInequalities = [];
+      
+      cy.edges('.constraint').forEach((edge) => {
+        const inequality = {axis: 'y', left: edge.source(), right: edge.target(), gap: 150};
+        gapInequalities.push(inequality);
+      });
+
+      colaLayout = visibleGraph.layout({
         name: 'cola',
         randomize: false,
         fit: false,
+        avoidOverlap: true,
         nodeDimensionsIncludeLabels: true,
-        unconstrIter: 10, // 100,
-        userConstIter: 0,
-        // allConstIter:
+        // unconstrIter: 10, // 100,
+        // userConstIter: 10,
+        // allConstIter: 10,
         infinite: true,
+        gapInequalities,
         edgeLength: edge => {
-          if (edge.data('siblingBond')) {
-            // console.log('sibling bond');
-            return 1;
+          if (edge.target().indegree() == 1) {
+            return 150;
           }
-          if (edge.data('originTools')[0] === 'rubrowser') {
-            return 5;
-          }
-          // console.log('default');
-          return 5;
-        },
+          return 300;
+        }
+        // edgeLength: edge => {
+        //   if (edge.data('siblingBond')) {
+        //     // console.log('sibling bond');
+        //     return 1;
+        //   }
+        //   if (edge.data('originTools')[0] === 'rubrowser') {
+        //     return 5;
+        //   }
+        //   // console.log('default');
+        //   return 5;
+        // },
+
       });
 
       colaLayout.on('layoutstop', () => {
@@ -287,21 +385,103 @@ const menus = cy.contextMenus({menuItems: [
   {
     id: 'markov',
     content: 'Find markov clusters',
-    selector: 'node',
-    onClickFunction: (e) => {
-      const node = e.target;
+    coreAsWell: true,
+    onClickFunction: () => {
+      let currentComponents = cy.elements().components();
+      let nextComponents = [];
+      const allClusters = [];
+      let inflateFactor = 2;
+      while (currentComponents.length > 0 || nextComponents.length > 0) {
+        if (currentComponents.length == 0) {
+          currentComponents = nextComponents;
+          nextComponents = [];
+          inflateFactor += 0.1;
+          console.log("Increased inflateFactor to", inflateFactor);
+        }
 
-      console.log('Finding markov clusters of component');
-      const component = node.component()
-      console.log(component)
+        const component = currentComponents.shift();
+        console.log("Working on component with size", component.nodes().length);
+        if (component.nodes().length < 10 || inflateFactor > 10) {
+          // It's small enough already!
+          allClusters.push(component.nodes());
+          continue;
+        }
+        console.log('Finding markov clusters');
       
-      const clusters = component.filter('[^siblingBond]').markovClustering();
+        const clusters = component.filter('[^siblingBond]').markovClustering({
+          attributes: [
+            //edge => 1/edge.target().indegree(), // The fewer other edges target this, the stronger
+            //edge => 1/edge.source().outdegree(), // The fewer other calls from this source, the stronger
+            edge => Math.max(1/edge.target().indegree(), 1/edge.source().outdegree()),
+            edge => (edge.data('originTools') || [])  [0] != 'rubrowser' ? 1 : 0.5, // Treat the explicit ERD links as stronger
+            edge => { // Shared namespaces are a strong sign of relatedness.
+              const sourceParts = edge.source().id().split('::');
+              const targetParts = edge.target().id().split('::');
+              for (let i = 0; i < Math.min(sourceParts.length, targetParts.length); i++) {
+                if (sourceParts[i] != targetParts[i]) return i;
+              }
+              return Math.min(sourceParts.length, targetParts.length);
+            },
+            edge => edge.data('rrType') === 'is-a' ? 1 : 0.1, // If this is an "is-a" edge, that's quite strong.
+          ],
+          inflateFactor,
+          maxIterations: 50,
+        });
+
+        console.log(clusters.map(c => c.nodes().length));
+
+        for (const cluster of clusters) {
+          if (cluster.nodes().length > 100) {
+            console.log("Queuing cluster for further decomposition");
+            nextComponents.push(cluster.union(cluster.edgesWith(cluster)));
+          } else {
+            allClusters.push(cluster);
+          }
+        }
+      }
+
+      console.log(allClusters);
+      groups = allClusters;
+
+      for(const group of groups) {
+        const {ele: maxDegreeNode} = group.max(n => n.degree());
+        const groupName = `Group|${maxDegreeNode.id()}`
+        group.data('group', groupName);
+        group.on('dblclick', () => {
+          console.log(`double-clicked on ${groupName}`);
+          group.select();
+        })
+      }
+    }
+  },
+  {
+    id: 'cise',
+    content: 'Apply CISE layout',
+    coreAsWell: true,
+    onClickFunction: () => {
+      const clusters = groups.map(cluster => cluster.map(n => n.id()));
       console.log(clusters);
 
-      for (let cluster of clusters) {
+      cy.layout({
+        name: 'cise',
+        clusters,
+        idealInterClusterEdgeLengthCoefficient: 3.0,
+        nodeRepulsion: 10000,
+        packComponents: true,
+        // allowNodesInsideCircle: true,
+        // maxRatioOfNodesInsideCircle: 0.25,
+      }).start();
+    }
+  },
+  {
+    id: 'bubbles',
+    content: 'Apply bubbles to groups',
+    coreAsWell: true,
+    onClickFunction: () => {
+      for (let cluster of groups) {
         cluster = cluster.union(cluster.edgesWith(cluster));
         bb.addPath(cluster.nodes(), cluster.edges(), null)
-      }      
+      } 
     }
   },
   {
@@ -323,6 +503,39 @@ fetch('/rails.cy.json')
   .then(response => response.json())
   .then(tasks.addBreaksToNames)
   .then(response => cy.json(response))
+  .then(() => {
+    // Remove any elements that are in the patches directory.
+    // These are monkey-patches of underlying classes, and we probably do not want to consider them.
+    console.log(cy.nodes('[locations.0.file *= "lib/patches/"]').remove().nodes());
+  })
+  .then(() => {
+    // Can we add in Pundit's magical mystery policy links? Sure!
+    cy.nodes('[type$="Model"]').each((modelNode) => {
+      const modelNodeId = modelNode.id();
+      const impliedPolicyNameId = `${modelNodeId}Policy`;
+      if (cy.getElementById(impliedPolicyNameId).length > 0) {
+        cy.add({data: {
+          source: modelNodeId,
+          target: impliedPolicyNameId,
+          type: 'PunditPolicy',
+        }})
+      }
+    })
+  })
+  .then(() => {
+    // railroady's cardinality algorithm left something to be desired. Everything is an is-a or many:many...
+
+    // For the many:many edges, if there's a parallel edge defined by ERD, discard railroady's edge and trust ERD.
+    cy.edges('[rrType="many:many"]').each(edge => {
+      if (edge.parallelEdges('[originTools.0="erd"]').length > 0) {
+        edge.remove();
+      }
+    })
+    cy.edges('[rrType="is-a"]').each(edge => {
+      // For the is-a edges, ERD wants to represent them as one-to-many. Railroady is more sensible.
+      edge.parallelEdges('[originTools.0="erd"]').remove();
+    })
+  })
   // .then(tasks.createVirtualParentNodes)
   // .then(tasks.applySiblingBond)
   .then(tasks.unparentAll)
@@ -330,6 +543,24 @@ fetch('/rails.cy.json')
   .then(() => {
     originalJson = cy.json();
   })
+  // .then(() => {
+  //   cy.nodes().on('dblclick', (e) => {
+  //     console.log(`double-clicked on ${e.target.id()}`);
+  //     e.target.toggleClass('collapse');
+  //   })
+  // })
+  // .then(() => {
+  //   const degreeCounts = {};
+  //   cy.nodes().forEach(node => {
+  //     const degree = node.degree(false);
+  //     if (!(degree in degreeCounts)) { degreeCounts[degree] = 0 }
+  //     degreeCounts[degree]++;
+  //     if (degree > 37) {
+  //       console.log(node.id(), node.indegree(false), node.outdegree(false));
+  //     }
+  //   })
+  //   console.log(degreeCounts);
+  // })
   .then(() => {
     // Find all disconnected nodes and remove them for now.
     cy.remove('[[degree=0]]');
