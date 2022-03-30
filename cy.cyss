@@ -25,32 +25,41 @@ node:locked {
     underlay-opacity: 0.75;
 }
 
+[type="Domain"] {
+    font-size: 50;
+    font-weight: bold;
+    shape: round-rectangle;
+    background-color: #E0E0E2; /* off-white */
+    width: 300;
+    height: 300;
+}
+
 [type^="Abstract"] {
     background-blacken: -0.5;
 }
 [type="Alias"] {
     background-blacken: -0.5;
     shape: round-diamond;
-    background-color: goldenrod; 
+    background-color: #E2AA28; /* goldenrod */ 
 }
 [type$="Model"] {
     shape: ellipse;
-    background-color: lightseagreen;
+    background-color: #999EFF; /* blue-purple */
 }
 [type$="Class"] {
     shape: rectangle;
-    background-color: brown;
+    background-color: #BC9FBB; /* lilac */
 }
 [type$="Module"] {
     shape: rectangle;
-    background-color: green;
+    background-color: #48D59B; /* green */
 }
 node[name$="Controller"] {
-    background-color: orange;
+    background-color: #F1926A; /* orange */ 
 }
 
 edge{
-    width: 5;
+    width: 1;
     curve-style: bezier;
 }
 edge[originTools.0="rubrowser"] {
@@ -68,11 +77,6 @@ edge[?circular] {
 }
 edge[siblingBond] {
     display: none;
-}
-node.collapse {
-    label: ;
-    height: 10;
-    width: 10;
 }
 .hidden {
     visibility: hidden;

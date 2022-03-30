@@ -78,6 +78,14 @@ const graphTasks = (cy) => ({
 
   unparentAll: () => {
     cy.nodes().children().forEach(node => {
+      console.log(`Unparenting ${node.id()} from ${node.parent().id()}`);
+      const parent = node.parent();
+      cy.add({data: {
+        source: node.id(),
+        target: parent.id(),
+        edgeType: 'childOf',
+      }
+      })
       node.move({parent: null});
     })
   },
