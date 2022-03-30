@@ -27,7 +27,7 @@ module.exports = {
     }),
   ],
   devServer: {
-    static: './dist',
+    static: ['./dist', './node_modules/cytoscape-context-menus'],
   },
   mode: 'development',
 }

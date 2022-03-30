@@ -2,6 +2,12 @@ import cytoscape from "cytoscape";
 import cola from "cytoscape-cola";
 import dagre from "cytoscape-dagre";
 import cise from "cytoscape-cise";
+import elk from 'cytoscape-elk';
+import svg from 'cytoscape-svg';
+import fcose from 'cytoscape-fcose';
+import coseBilkent from 'cytoscape-cose-bilkent';
+import expandCollapse from 'cytoscape-expand-collapse';
+
 import layoutUtilities from 'cytoscape-layout-utilities';
 
 import BubbleSets from "cytoscape-bubblesets";
@@ -12,15 +18,19 @@ import graphTasks from './graphtasks';
 
 import './style.css';
 import cystyle from './cy.cyss';
-import { Solver } from "webcola";
 
 // Register extensions
 cytoscape.use( layoutUtilities );
+cytoscape.use(svg);
 cytoscape.use(cola);
 cytoscape.use(dagre);
 cytoscape.use(BubbleSets);
 cytoscape.use(contextMenus);
 cytoscape.use(cise);
+cytoscape.use(elk);
+cytoscape.use(fcose);
+cytoscape.use(coseBilkent);
+cytoscape.use(expandCollapse);
 
 // Create the Cytoscape-managed div.
 const container = document.createElement('div');
@@ -29,6 +39,10 @@ document.body.appendChild(container);
 
 // Attach cytoscape
 const cy = cytoscape({container});
+
+// Give us a handle we can use on the console for programmatic access.
+window.cy = cy;
+
 // Add our styles
 cy.style(cystyle);
 
@@ -37,9 +51,45 @@ const tasks = graphTasks(cy);
 
 const bb = cy.bubbleSets();
 
+const xc = cy.expandCollapse({
+  // layoutBy: {
+  //   name: 'cose-bilkent',
+  //   // nodeRepulsion: 45000,
+  //   randomize: false,
+  // },
+  cueEnabled: true,
+  undoable: false,
+  expandCollapseCueSize: 24, 
+});
+
 let colaLayout;
 
 let groups = [];
+let domains = {};
+
+const rebuildDomainSubmenu = () => {
+  menus.removeMenuItem('addToDomainMenu');
+  const domainSubmenu = [];
+  for (const domain of Object.keys(domains).sort()) {
+    domainSubmenu.push({
+      id: `addTo${domain}`,
+      content: domain,
+      onClickFunction: (e) => {
+        // If there is a selection, we'll add everything selected.
+        // Otherwise, we'll add the target element.
+        const selection = cy.nodes(':selected');
+        const target = selection.length > 0 ? selection : e.target;
+        target.move({parent: domains[domain].id()});
+      }
+    });
+  }
+  menus.appendMenuItem({
+    id: 'addToDomainMenu',
+    content: 'Add to domain...',
+    selector: 'node',
+    submenu: domainSubmenu,
+  });
+}
 
 // Set up context menus
 const menus = cy.contextMenus({menuItems: [
@@ -54,6 +104,12 @@ const menus = cy.contextMenus({menuItems: [
     content: 'Unlock node',
     selector: 'node:locked',
     onClickFunction: (e) => {e.target.unlock();}
+  },
+  {
+    id: 'collapse',
+    content: 'Collapse / Uncollapse group',
+    selector: 'node:parent',
+    onClickFunction: (e) => {e.target.toggleClass('collapse')}
   },
   {
     id: 'remove',
@@ -121,6 +177,14 @@ const menus = cy.contextMenus({menuItems: [
         selector: 'node, edge',
         onClickFunction: (e) => {
           e.target.neighborhood().select();
+        }
+      },
+      {
+        id: 'selectNeighbors',
+        content: 'Select non-parent neighbors',
+        selector: 'node, edge',
+        onClickFunction: (e) => {
+          e.target.neighborhood('node').subtract(e.target.neighborhood('.cy-expand-collapse-collapsed-node')).select();
         }
       },
       {
@@ -323,14 +387,14 @@ const menus = cy.contextMenus({menuItems: [
         fit: false,
         avoidOverlap: true,
         nodeDimensionsIncludeLabels: true,
-        // unconstrIter: 10, // 100,
+        unconstrIter: 100, // 100,
         // userConstIter: 10,
         // allConstIter: 10,
         infinite: true,
         gapInequalities,
         edgeLength: edge => {
           if (edge.target().indegree() == 1) {
-            return 150;
+            return 10;
           }
           return 300;
         }
@@ -474,6 +538,45 @@ const menus = cy.contextMenus({menuItems: [
     }
   },
   {
+    id: 'elkBox',
+    content: 'Apply box-packing layout',
+    coreAsWell: true,
+    onClickFunction: () => {
+      const aspectRatio = (cy.width() * 1.0) / cy.height();
+      console.log("aspect ratio is", aspectRatio);
+
+      cy.layout({
+        name: 'elk',
+        fit: false,
+        nodeDimensionsIncludeLabels: true,
+        elk: {
+          algorithm: 'box',
+          packingMode: 'GROUP_DEC',
+          'elk.aspectRatio': 1.0,
+          'spacing.nodeNode': 30,
+          interactive: true,
+        }
+      }).start();
+    }
+  },
+  {
+    id: 'elkAlt',
+    content: 'Apply ELK layout',
+    coreAsWell: true,
+    onClickFunction: () => {
+      cy.layout({
+        name: 'elk',
+        fit: false,
+        nodeDimensionsIncludeLabels: true,
+        elk: {
+          algorithm: 'layered',
+          'elk.aspectRatio': 1.4,
+          interactive: false,
+        }
+      }).start();
+    }
+  },
+  {
     id: 'bubbles',
     content: 'Apply bubbles to groups',
     coreAsWell: true,
@@ -493,10 +596,102 @@ const menus = cy.contextMenus({menuItems: [
         bb.removePath(path);
       }
     }
+  },
+  {
+    id: 'gridDomain',
+    content: 'Clean up domain',
+    selector: 'node[type="Domain"]',
+    onClickFunction: (e) => {
+      const domainNode = e.target;
+      console.log(`cleaning up ${domainNode.id()}`);
+      const children = domainNode.children();
+      const squareSize = Math.ceil(Math.sqrt(children.length));
+      const nodeSize = children.reduce((acc, child) => Math.max(acc, child.outerWidth()), 0);
+      // const nodeSize = 150; // This is the size from the CSS - we could query instead.
+
+      const nodeGap = Math.ceil(nodeSize * 0.2);
+      const sideSize = ((nodeSize + nodeGap) * squareSize ) - nodeGap;
+      const w = sideSize, h = sideSize;
+      const {x1, y1} = domainNode.boundingBox();
+      console.log({nodeSize, x1, y1, w, h});
+      children.layout({
+        name: 'grid',
+        boundingBox: {x1, y1, w, h},
+        fit: false,
+        animate: true,
+      }).start();
+    }
+  },
+  {
+    id: 'logSvg',
+    content: 'Dump graph to SVG',
+    coreAsWell: true,
+    onClickFunction: () => {
+      console.log(cy.svg());
+    }
+  },
+  {
+    id: 'logDomains',
+    content: 'Dump domain data to JSON',
+    coreAsWell: true,
+    onClickFunction: () => {
+      const data = cy.nodes('[type="Domain"]')
+        .map(parent => ({
+          id: parent.id(),
+          name: parent.data('name'),
+          children: parent.children().map(child => child.id())
+        }));
+      console.log(JSON.stringify(data));
+    }
+  },
+  {
+    id: 'addToTeam',
+    content: 'Add to team',
+    selector: 'node:orphan',
+    submenu: [
+      {id: 'buyer', content: 'Buyer', onClickFunction: (e) => e.target.data('team', 'Buyer')},
+      {id: 'candidate', content: 'Candidate', onClickFunction: (e) => e.target.data('team', 'Candidate')},
+      {id: 'data', content: 'Data', onClickFunction: (e) => e.target.data('team', 'Data')},
+      {id: 'hire', content: 'Hire', onClickFunction: (e) => e.target.data('team', 'Hire')},
+      {id: 'ive', content: 'IVE', onClickFunction: (e) => e.target.data('team', 'IVE')},
+      {id: 'platform', content: 'Platform', onClickFunction: (e) => e.target.data('team', 'Platform')},
+    ]
+  },
+  {
+    id: 'clearTeam',
+    content: 'Remove team',
+    selector: 'node[team]',
+    onClickFunction: (e) => e.target.removeData('team')
+  },
+  {
+    id: 'addDomain',
+    content: 'Add domain',
+    coreAsWell: true,
+    onClickFunction: () => {
+      const name = window.prompt("Name of domain");
+      if (name && !(name in domains)) {
+        domains[name] = cy.add({data: {
+          name,
+          id: `Domain|${name}`,
+          type: 'Domain',
+        }})[0];
+        rebuildDomainSubmenu();
+      }
+    }
+  },
+  {
+    id: 'addToDomainMenu',
+    content: 'Add to domain...',
+    selector: 'node',
+    submenu: [],
   }
 ]})
 
 let originalJson = {};
+
+// fetch('/full-post-cola.cy.json')
+// .then(response => response.json())
+// .then(response => cy.json(response))
 
 // fetch('/rails-redacted.cy.json')
 fetch('/rails.cy.json')
@@ -539,7 +734,47 @@ fetch('/rails.cy.json')
   // .then(tasks.createVirtualParentNodes)
   // .then(tasks.applySiblingBond)
   .then(tasks.unparentAll)
+  .then(async () => {
+    const domainJson = await(await fetch('./domains.json')).json();
+    console.log(domainJson);
+    for (const {id, name, children} of domainJson) {
+      domains[name] = cy.add({data: {name, id, type: 'Domain'}})[0];
+      for (const childId of children) {
+        cy.getElementById(childId).move({parent: id});
+      }
+    }
+    rebuildDomainSubmenu();
+  })
+
+  .then(() => {
+    xc.collapseAll();
+    xc.collapseAllEdges();
+  })
+
   .then(tasks.doLayout({name: 'grid'}))
+  // .then(tasks.doLayout({
+  //   name: 'cose-bilkent',
+  //   fit: true,
+  //   quality: 'proof',
+  //   interactive: true,
+  // }))
+
+
+
+  // .then(tasks.doLayout({
+  //   name: 'elk',
+  //   fit: true,
+  //   nodeDimensionsIncludeLabels: true,
+  //   elk: {
+  //     algorithm: 'box',
+  //     packingMode: 'GROUP_DEC',
+  //     'elk.aspectRatio': 1.0,
+  //     'spacing.nodeNode': 30,
+  //     interactive: true,
+  //   }
+  // }))
+
+  //.then(tasks.doLayout({name: 'grid'}))
   .then(() => {
     originalJson = cy.json();
   })
@@ -561,9 +796,9 @@ fetch('/rails.cy.json')
   //   })
   //   console.log(degreeCounts);
   // })
-  .then(() => {
+  //.then(() => {
     // Find all disconnected nodes and remove them for now.
-    cy.remove('[[degree=0]]');
+  //  cy.remove('[[degree=0]]');
 
     // let done = false;
     // while (!done) {
@@ -604,7 +839,7 @@ fetch('/rails.cy.json')
     //     node.move({parent: outgoers[0].id()});
     //   }
     // }
-  })
+  //})
   // .then(() => {
   //   cy.remove(':child')
   // })
